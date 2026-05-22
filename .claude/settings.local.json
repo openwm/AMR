@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(claude --version)",
+      "PowerShell(docker restart openwm-api *)",
+      "PowerShell(Invoke-RestMethod -Uri \"http://localhost:8000/api/v1/inventory/products\" -Method GET | ConvertTo-Json -Depth 2 | Select-Object -First 30)",
+      "PowerShell(Invoke-RestMethod -Uri \"http://localhost:8000/health\" -Method GET | ConvertTo-Json; Invoke-RestMethod -Uri \"http://localhost:8000/api/inventory/products\" -Method GET | ConvertTo-Json -Depth 2 | Select-Object -First 50)",
+      "PowerShell(Get-Command *)",
+      "PowerShell(git *)",
+      "PowerShell(winget list *)",
+      "PowerShell(winget install *)"
+    ]
+  }
+}
