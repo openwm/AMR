@@ -14,11 +14,11 @@ from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.db import SessionLocal
-from app.modules.inbound.models import POLine, PurchaseOrder, Receipt, ReceiptLine
-from app.modules.inbound.service import complete_receipt
-from app.modules.inventory.models import Location, Product, StockItem
-from app.modules.outbound.models import SalesOrder, Shipment, ShipmentLine, SOLine
-from app.modules.outbound.service import ship
+from app.systems.wms.inbound.models import POLine, PurchaseOrder, Receipt, ReceiptLine
+from app.systems.wms.inbound.service import complete_receipt
+from app.systems.wms.inventory.models import Location, Product, StockItem
+from app.systems.wms.outbound.models import SalesOrder, Shipment, ShipmentLine, SOLine
+from app.systems.wms.outbound.service import ship
 
 # Seed-data definitions ----------------------------------------------------
 
@@ -212,7 +212,7 @@ def _seed_outbound(db, products: list[Product]) -> None:
         so = SalesOrder(
             reference=f"SO-2026-{i:04d}",
             customer=random.choice(CUSTOMERS),
-            status="OPEN",
+            status="NEW",
             requested_date=(so_date + timedelta(days=2)).date(),
         )
         so.created_at = so_date

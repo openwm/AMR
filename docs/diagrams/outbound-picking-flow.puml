@@ -1,0 +1,149 @@
+@startuml outbound-picking-flow
+
+skinparam DefaultFontName "Segoe UI"
+skinparam DefaultFontSize 12
+skinparam ArrowFontSize 11
+skinparam NoteBackgroundColor #FFFDE7
+skinparam NoteBorderColor #F9A825
+skinparam ActivityBorderColor #546E7A
+skinparam ActivityBackgroundColor #ECEFF1
+skinparam ActivityDiamondBackgroundColor #E3F2FD
+skinparam ActivityDiamondBorderColor #1565C0
+skinparam swimlaneBorderColor #90A4AE
+skinparam swimlaneBorderThickness 1
+skinparam TitleFontSize 16
+skinparam TitleFontStyle bold
+
+title Outbound Picking Flow — End to End
+
+'──────────────────────────────────────────────────────────────────────────────
+|#EEF7EE|WMS — Orders & Planning|
+
+start
+
+:Create Sales Order;
+note right
+  POST /api/wms/outbound/sales-orders
+  status = **NEW**
+  lines: product_id + qty_ordered
+end note
+
+:Run Planning\n(POST /api/wms/planning/run);
+note right
+  • checks available_qty per line
+  • marks StockItems → **ALLOCATED**
+  • status: NEW → **ACTIVE**
+  • respects max_active_orders (default 10)
+end note
+
+:Release to WCS\n(POST /api/wms/planning/release);
+note right
+  up to **max_picking_orders** (default 10)
+  status: ACTIVE → **PICKING**
+end note
+
+'──────────────────────────────────────────────────────────────────────────────
+|#E8F0FB|WCS — Control System|
+
+:Create Outbound Carton;
+note right
+  assigned to least-loaded station
+  STA-01 · STA-02 · STA-03
+  stored in Redis: wcs:carton:{id}
+end note
+
+:Create PickTask per SO Line;
+note right
+  • status = **queued**
+  • priority score = deadline epoch
+  • deadline = now + 24 h
+  • wcs:station:{sid}:queue (ZSET)
+end note
+
+:Auto-promote top task → at_dock\n(if dock slot is empty);
+note right
+  wcs:station:{sid}:at_dock (ZSET)
+  status = **at_dock**
+end note
+
+'──────────────────────────────────────────────────────────────────────────────
+|#FFF8E1|AMR — Autonomous Mobile Robot|
+
+:Receive task assignment;
+:Navigate to storage location;
+:Pick up stock unit;
+:Travel to assigned picking station;
+
+'──────────────────────────────────────────────────────────────────────────────
+|#FCE4EC|Operator — Picking Station UI|
+
+:Poll station queue every 2 s\n(GET /api/wcs/stations/{sid}/queue);
+
+:Detect new at_dock task →\ndisplay pick prompt;
+note right
+  URL: /devices/picking/STA-01
+  Shows: SKU · quantity · SO reference
+  New task ID tracked in seenTaskIds
+end note
+
+:Operator confirms pick\n("Confirm Pick" button);
+
+'──────────────────────────────────────────────────────────────────────────────
+|#E8F0FB|WCS — Control System|
+
+:advance_task()\nat_dock → **picking**;
+note right
+  POST .../tasks/{id}/advance
+  promotes next queued task → at_dock
+end note
+
+:complete_task()\npicking → **completed**;
+note right
+  • records pace tick (picks/hr)
+  • releases AMR slot (amr_count -1)
+  • fires HTTP PATCH callback → WMS
+end note
+
+:PATCH /api/wms/outbound/\nsales-orders/{id}/lines/{id}\n{ picked_qty: qty };
+
+'──────────────────────────────────────────────────────────────────────────────
+|#EEF7EE|WMS — Orders & Planning|
+
+:record_line_picked()\nincrement qty_picked on SOLine;
+
+if (all SO lines\nqty_picked >= qty_ordered?) then (yes)
+
+  :_auto_ship()\nfind ALLOCATED StockItems (FIFO)\nbuild Shipment + ShipmentLines;
+
+  '──────────────────────────────────────────────────────────────────────────
+  |#F3E5F5|WMS — Inventory|
+
+  :apply_movement(PICK)\n−qty per source location;
+  note right
+    • StockItem.quantity decremented
+    • StockMovement ledger entry appended
+    • reference: shipment id
+    • movement_type = PICK
+  end note
+
+  :qty_shipped updated on SOLine;
+
+  '──────────────────────────────────────────────────────────────────────────
+  |#EEF7EE|WMS — Orders & Planning|
+
+  :Shipment.status → **SHIPPED**;
+  :SO.status → **SHIPPED**\n(or PARTIAL if only some lines done);
+
+  stop
+
+else (no — more lines remain)
+
+  :await next AMR delivery;
+
+  ' AMR picks up and loops for remaining SO lines
+  :pick next task\n(loop continues for\nremaining SO lines);
+  detach
+
+endif
+
+@enduml

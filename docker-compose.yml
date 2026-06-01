@@ -16,12 +16,25 @@ services:
       timeout: 5s
       retries: 10
 
+  redis:
+    image: redis:7-alpine
+    container_name: openwm-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   api:
     build:
       context: ./backend
     container_name: openwm-api
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-openwm}:${POSTGRES_PASSWORD:-openwm_dev}@db:5432/${POSTGRES_DB:-openwm}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      WMS_API_URL: ${WMS_API_URL:-http://localhost:8000}
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
       JWT_ALGORITHM: HS256
       JWT_EXPIRES_MINUTES: ${JWT_EXPIRES_MINUTES:-480}
@@ -29,6 +42,8 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     ports:
       - "${API_PORT:-8000}:8000"
