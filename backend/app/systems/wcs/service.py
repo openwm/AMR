@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -179,6 +180,9 @@ async def create_task(req: CreateTaskRequest) -> PickTask:
     await _save_task(task)
     await r.zadd(_queue_key(sid), {task.id: score})
     await r.incr(_amr_key(sid))
+
+    # Optionally notify AMR simulator (fire-and-forget)
+    asyncio.create_task(_dispatch_amr_to_station(task))
 
     # Auto-promote top task to at_dock if dock is empty
     if await r.zcard(_at_dock_key(sid)) == 0:
@@ -399,6 +403,21 @@ async def _patch_wms_order_line(task: PickTask) -> None:
             )
         except Exception as exc:
             print(f"[WCS] WMS patch skipped ({exc})")
+
+
+async def _dispatch_amr_to_station(task: PickTask) -> None:
+    """Fire-and-forget: auto-dispatch nearest idle AMR to the task's station."""
+    if not settings.AMR_SIMULATOR_URL:
+        return
+    async with httpx.AsyncClient() as client:
+        try:
+            await client.post(
+                f"{settings.AMR_SIMULATOR_URL}/dispatch",
+                json={"location_code": task.station_id},
+                timeout=2.0,
+            )
+        except Exception as exc:
+            print(f"[WCS] AMR dispatch skipped ({exc})")
 
 
 def _log_refill(station_id: str, depth: int) -> None:

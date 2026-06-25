@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = "http://localhost:5173"
     REDIS_URL: str = "redis://redis:6379/0"
     WMS_API_URL: str = "http://localhost:8000"
+    AMR_SIMULATOR_URL: str | None = None
 
     @property
     def cors_origins_list(self) -> list[str]:
